@@ -1,0 +1,84 @@
+name: Publish to Microsoft Store
+
+# Release 发布后才跑 —— 需要从 Release 下载已经构建好的 .msix。
+# 首次提交必须先在 Partner Center 手工完成一次（年龄分级问卷等），
+# 之后本工作流才能接管后续版本。
+#
+# 未配置下面的 secret 时整个 job 自动跳过（绿色），不会失败。
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  store:
+    # 预发布版本不进 Store
+    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.release.prerelease }}
+    runs-on: windows-latest
+
+    # secrets 不允许出现在 if 里（GitHub 会报 Unrecognized named-value），
+    # 所以先映射到 env，再用 env 判断。
+    env:
+      STORE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      STORE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      STORE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      STORE_SELLER_ID: ${{ secrets.SELLER_ID }}
+      STORE_PRODUCT_ID: ${{ secrets.PRODUCT_ID }}
+
+    steps:
+    - name: Check Store credentials
+      id: check
+      shell: bash
+      run: |
+        if [ -n "$STORE_TENANT_ID" ] && [ -n "$STORE_CLIENT_ID" ] \
+          && [ -n "$STORE_CLIENT_SECRET" ] && [ -n "$STORE_SELLER_ID" ] \
+          && [ -n "$STORE_PRODUCT_ID" ]; then
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::Store secrets not configured — skipping Store submission."
+        fi
+
+    - name: Download release MSIX
+      if: steps.check.outputs.enabled == 'true'
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        New-Item -ItemType Directory -Path pkgs -Force | Out-Null
+        if ('${{ github.event_name }}' -eq 'release') {
+          gh release download '${{ github.event.release.tag_name }}' --pattern '*.msix' --dir pkgs
+        } else {
+          gh release download --pattern '*.msix' --dir pkgs
+        }
+        Get-ChildItem pkgs
+
+    # Store 只接受一个包文件，所以把 x64 + ARM64 合成一个 .msixbundle，
+    # 否则第二个 publish 会把第一个创建的草稿提交删掉。
+    - name: Bundle architectures
+      if: steps.check.outputs.enabled == 'true'
+      shell: pwsh
+      run: |
+        $makeappx = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\makeappx.exe" |
+          Sort-Object FullName -Descending | Select-Object -First 1
+        if (-not $makeappx) { throw "makeappx.exe not found" }
+        & $makeappx.FullName bundle /d pkgs /p VSCodeRecent.msixbundle /o
+        if ($LASTEXITCODE -ne 0) { throw "makeappx bundle failed" }
+
+    - name: Setup MSStore CLI
+      if: steps.check.outputs.enabled == 'true'
+      uses: microsoft/microsoft-store-apppublisher@v1.4
+
+    - name: Configure Store credentials
+      if: steps.check.outputs.enabled == 'true'
+      run: >
+        msstore reconfigure
+        --tenantId ${{ env.STORE_TENANT_ID }}
+        --sellerId ${{ env.STORE_SELLER_ID }}
+        --clientId ${{ env.STORE_CLIENT_ID }}
+        --clientSecret ${{ env.STORE_CLIENT_SECRET }}
+
+    # 上传 → 提交 → 轮询 → 发布。
+    - name: Publish
+      if: steps.check.outputs.enabled == 'true'
+      run: msstore publish VSCodeRecent.msixbundle --appId ${{ env.STORE_PRODUCT_ID }}

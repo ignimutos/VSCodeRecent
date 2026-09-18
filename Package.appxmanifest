@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 rescap">
+
+  <!--
+    Publisher 里的 OID.2.25.311729368913984317654407730594956997722=1 是 Windows 保留的
+    "未签名命名空间"。未签名包只有把 Publisher 放进这个命名空间才能用
+    Add-AppxPackage -AllowUnsigned 安装，否则报 0x80073D2C。
+    将来做代码签名（上架/分发）时，把这个 OID 去掉，换回与证书匹配的 CN。
+  -->
+  <Identity
+    Name="VSCodeRecent"
+    Publisher="CN=ignimutos, OID.2.25.311729368913984317654407730594956997722=1"
+    Version="1.0.0.0" />
+
+  <Properties>
+    <DisplayName>VSCode Recent</DisplayName>
+    <PublisherDisplayName>ignimutos</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.19041.0" MaxVersionTested="10.0.19041.0" />
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.19041.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="x-generate"/>
+  </Resources>
+
+  <Applications>
+    <Application Id="App"
+      Executable="$targetnametoken$.exe"
+      EntryPoint="$targetentrypoint$">
+      <uap:VisualElements
+        DisplayName="VSCode Recent"
+        Description="快速访问 VSCode 最近打开的项目和文件"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+        <uap:SplashScreen Image="Assets\SplashScreen.png" />
+      </uap:VisualElements>
+      <Extensions>
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:ExeServer Executable="VSCodeRecent.exe" Arguments="-RegisterProcessAsComServer" DisplayName="VSCode Recent">
+              <com:Class Id="A5F9B8E3-C4D2-A1F0-E9B8-C7D6E5F4A3B2" DisplayName="VSCode Recent" />
+            </com:ExeServer>
+          </com:ComServer>
+        </com:Extension>
+        <uap3:Extension Category="windows.appExtension">
+          <uap3:AppExtension Name="com.microsoft.commandpalette"
+            Id="VSCodeRecent"
+            PublicFolder="Public"
+            DisplayName="VSCode Recent"
+            Description="快速访问 VSCode 最近打开的项目和文件">
+            <uap3:Properties>
+              <CmdPalProvider>
+                <Activation>
+                  <CreateInstance ClassId="A5F9B8E3-C4D2-A1F0-E9B8-C7D6E5F4A3B2" />
+                </Activation>
+                <SupportedInterfaces>
+                  <Commands/>
+                </SupportedInterfaces>
+              </CmdPalProvider>
+            </uap3:Properties>
+          </uap3:AppExtension>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

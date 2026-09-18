@@ -1,0 +1,115 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: x64
+            os: windows-latest
+          # ARM64 必须跑在 arm64 宿主上：测试程序集按 Platform 编成 win-arm64，
+          # x64 runner 上装不出对应的 dotnet 测试宿主，会报
+          # "Could not find 'dotnet.exe' host for the 'ARM64' architecture"。
+          # 那条腿一挂，整个 job 就算失败，needs: build 的 release 也跟着被跳过。
+          - platform: ARM64
+            os: windows-11-arm
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: '10.0.x'
+
+    # 版本号唯一来源是 tag；写回清单，保证包内版本与 Release 一致。
+    # 第四段必须为 0（Store / MSIX 规范保留给平台）。
+    - name: Stamp version from tag
+      if: startsWith(github.ref, 'refs/tags/v')
+      shell: pwsh
+      run: |
+        $ver = "${{ github.ref_name }}".TrimStart('v')
+        if ($ver -notmatch '^\d+\.\d+\.\d+$') { throw "Tag must look like v1.2.3, got '${{ github.ref_name }}'" }
+        $manifest = Join-Path "${{ github.workspace }}" 'Package.appxmanifest'
+        [xml]$x = Get-Content $manifest
+        $x.Package.Identity.Version = "$ver.0"
+        $x.Save($manifest)
+        Write-Host "Stamped Package.appxmanifest Version=$ver.0"
+
+    - name: Restore
+      run: dotnet restore -p:Platform=${{ matrix.platform }}
+
+    # 纯逻辑测试（URI 解析、JSON 解析、过滤排序），不需要 VSCode 也不需要装扩展。
+    # 放在打包前，逻辑坏了就别出包。两条腿各自原生跑，不需要特例。
+    - name: Test
+      run: dotnet test tests/VSCodeRecent.Tests/VSCodeRecent.Tests.csproj -c Release -p:Platform=${{ matrix.platform }}
+
+    - name: Build
+      run: dotnet build -c Release -p:Platform=${{ matrix.platform }} --no-restore
+
+    # 官方 recipe：AppxBundle=Never 保证每个平台产出单个 .msix 而不是 bundle
+    - name: Publish MSIX
+      run: >
+        dotnet publish -c Release
+        -p:Platform=${{ matrix.platform }}
+        -p:WindowsPackageType=MSIX
+        -p:AppxPackageDir="${{ github.workspace }}\AppPackages\"
+        -p:GenerateAppxPackageOnBuild=true
+        -p:AppxBundle=Never
+
+    - name: Stage MSIX
+      shell: pwsh
+      run: |
+        $msix = Get-ChildItem -Path "${{ github.workspace }}\AppPackages" -Recurse -Filter *.msix -ErrorAction Stop |
+          Where-Object { $_.FullName -notmatch '\\Dependencies\\' } |
+          Select-Object -First 1
+        if (-not $msix) { throw "No MSIX produced by dotnet publish" }
+        New-Item -ItemType Directory -Path staging -Force | Out-Null
+        Copy-Item $msix.FullName -Destination "staging/VSCodeRecent-${{ matrix.platform }}.msix"
+        Write-Host "Staged: staging/VSCodeRecent-${{ matrix.platform }}.msix"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: VSCodeRecent-${{ matrix.platform }}
+        path: staging/*.msix
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v8
+      with:
+        path: artifacts
+        merge-multiple: true
+
+    # 先建成草稿：store.yml 监听 published，而直接建正式 Release 会在资产上传完
+    # 之前就触发事件，store.yml 会下不到 .msix。
+    - name: Create draft Release
+      uses: softprops/action-gh-release@v3
+      with:
+        files: artifacts/*.msix
+        generate_release_notes: true
+        draft: true
+
+    # 本 job 没有 checkout，cwd 下没有 .git；gh 默认靠 git remote 推断仓库，
+    # 会报 "not a git repository"，所以要显式给 -R。
+    - name: Publish Release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: gh release edit '${{ github.ref_name }}' -R '${{ github.repository }}' --draft=false --latest

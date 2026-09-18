@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "VSCodeRecent (Package)": {
+      "commandName": "MsixPackage",
+      "doNotLaunchApp": true
+    },
+    "VSCodeRecent (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
