@@ -41,11 +41,22 @@
   </ItemGroup>
 
   <!-- 本项目的资源文件名没有 scale-200 后缀，用通配符包含实际存在的 PNG。
-       Icons\ 下是类型图标（Fluent System Icons 派生），也要打进包。 -->
+       MaterialIcons\ 下是按文件名关联的彩色图标（Material Icon Theme 派生，MIT），
+       同样要打进包 —— IconHelpers 只接受包内相对路径，没有从流建图标的公开 API。 -->
   <ItemGroup>
     <Content Include="Assets\*.png" />
-    <Content Include="Assets\Icons\*.png" />
-    <Content Include="Assets\Icons\NOTICE.md" />
+    <Content Include="Assets\MaterialIcons\*.png" />
+    <Content Include="Assets\MaterialIcons\NOTICE.md" />
+  </ItemGroup>
+
+  <!-- 关联表嵌进程序集：图标 PNG 必须留在磁盘上供宿主按路径读取，但关联表没有这个
+       约束。嵌进来可以避免「包漏打一个文件 → 所有图标静默变默认」这类失败。
+       LogicalName 显式写死，与 MaterialIconTheme.ResourceName 对应 —— 默认命名由
+       路径推导（反斜杠转点），改目录名会悄悄改掉它，那会变成运行时找不到资源。 -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\MaterialIcons\material-icons.json">
+      <LogicalName>VSCodeRecent.Assets.MaterialIcons.material-icons.json</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>

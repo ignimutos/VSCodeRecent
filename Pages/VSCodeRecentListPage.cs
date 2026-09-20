@@ -110,31 +110,33 @@ internal sealed partial class VSCodeRecentListPage : DynamicListPage
         {
             Title = item.Title,
             Subtitle = $"{item.TypeLabel} · {item.Path}",
-            Icon = IconForType(item.Kind),
+            Icon = IconFor(item),
         };
 
     /// <summary>
-    /// 按类型给图标。明暗两套取自 Fluent System Icons（MIT，见 Assets\Icons\NOTICE.md），
-    /// 与 Windows 自身图标同源，风格一致。
+    /// 按记录挑图标，规则与 VS Code 资源管理器一致 —— 关联表取自 Material Icon Theme
+    /// （MIT，见 Assets\MaterialIcons\NOTICE.md）。
     ///
-    /// TODO(宿主 bug): 目前首次打开面板 / 切主题时，部分行会取到反主题的变体而发白。
-    /// 根因在 CmdPal 宿主，不在扩展：IconBox 的 _lastTheme 字段未初始化（ElementTheme.Default），
-    /// 而 SourceRequested 在订阅瞬间就发请求（早于 Loaded 里 _lastTheme = ActualTheme），
-    /// 于是 IconProvider 的 `args.Theme == ElementTheme.Light ? Light : Dark` 落到 Dark；
-    /// Loaded 后的 Refresh 会重发正确请求，但两次都通过 ReferenceEquals(sourceKey, SourceKey)
-    /// 检查，谁后完成谁赢，所以结果按行随机。关掉面板重开即恢复。
-    /// 上游已在 PR #50181–#50192（"CmdPal Icons"）里把主题纳入缓存标识；等该版本后再复核，
-    /// 确认修复即可删掉本注释。
+    /// <para><b>只看一套彩色图，不再分明暗。</b>图标本身自带颜色，在明暗主题下都成立；
+    /// 省掉 .dark 变体后也顺带避开了宿主的一个 bug：<c>IconBox._lastTheme</c> 未初始化时
+    /// <c>SourceRequested</c> 会在 <c>Loaded</c> 之前发请求，导致
+    /// <c>FromRelativePaths(light, dark)</c> 按行随机取到反主题那一版而发白。
+    /// 只给一个路径就没有这个选择，重开面板与否都一样。</para>
     /// </summary>
-    private static IconInfo IconForType(ItemKind kind) => kind switch
+    private static IconInfo IconFor(VSCodeItem item)
     {
-        ItemKind.Workspace => IconHelpers.FromRelativePaths(
-            "Assets\\Icons\\workspace.png", "Assets\\Icons\\workspace.dark.png"),
-        ItemKind.File => IconHelpers.FromRelativePaths(
-            "Assets\\Icons\\file.png", "Assets\\Icons\\file.dark.png"),
-        _ => IconHelpers.FromRelativePaths(
-            "Assets\\Icons\\folder.png", "Assets\\Icons\\folder.dark.png"), // folder / 未知
-    };
+        var theme = MaterialIconTheme.Shared;
+        var icon = item.Kind switch
+        {
+            // 工作区不按文件名查表：.code-workspace 在主题里指向 VS Code 官方 logo，
+            // 已刻意排除（见 NOTICE.md），统一用中性的 folder-open。
+            ItemKind.Workspace => theme.Workspace,
+            ItemKind.Folder => theme.Folder,
+            _ => theme.ForFileName(item.FileName),
+        };
+
+        return IconHelpers.FromRelativePath(MaterialIconTheme.RelativePath(icon));
+    }
 
     /// <summary>
     /// 一条都读不到时的提示，并列出实际探测过的数据位置。

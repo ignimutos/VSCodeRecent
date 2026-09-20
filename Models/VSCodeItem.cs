@@ -7,6 +7,14 @@ internal sealed record VSCodeItem
     public required string Title { get; init; }
 
     /// <summary>
+    /// 含扩展名的文件名，只用来挑图标；文件夹与工作区为 null。
+    ///
+    /// <para>为什么不复用 <see cref="Title"/>：工作区的 Title 去掉了扩展名
+    /// （<c>My.code-workspace</c> → <c>My</c>），拿它查关联表会退到默认图标。</para>
+    /// </summary>
+    public string? FileName { get; init; }
+
+    /// <summary>
     /// 本地权威路径。文件夹/文件用反斜杠形式；工作区保持 VSCode 记录里的路径。
     /// 远程位置见 <see cref="Target"/>。
     /// </summary>

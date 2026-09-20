@@ -364,6 +364,10 @@ internal static class ParseHistoryKey
             Kind = kind,
             Order = order,
             Target = target,
+
+            // 挑图标要用原始文件名：Title 对工作区去过扩展名，对文件才是原名。
+            // 文件夹没有文件名，给 null 走默认文件夹图标。
+            FileName = kind == ItemKind.Folder ? null : Path.GetFileName(local),
         };
     }
 
