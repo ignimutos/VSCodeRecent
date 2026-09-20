@@ -176,7 +176,10 @@ function Install-Package {
 
         if ($HardReset -and $existing) {
             Write-Host "  先卸载旧包（强制换掉文件）"
-            $existing | Remove-AppxPackage -ErrorAction Stop
+            # 必须带 -PreserveApplicationData：不带的话 Remove-AppxPackage 连包数据一起删，
+            # 而 $env:LOCALAPPDATA\VSCodeRecent\settings.json 在 MSIX 里正被重定向到
+            # Packages\<PFN>\LocalCache\Local\ 下 —— 每跑一次 dev.cmd 就把用户的设置清空。
+            $existing | Remove-AppxPackage -PreserveApplicationData -ErrorAction Stop
             Start-Sleep -Milliseconds 500
             $existing = $null
         }
@@ -202,8 +205,10 @@ if ($Uninstall) {
     Write-Step "卸载 $PackageName"
     $pkg = Get-AppxPackage -Name $PackageName -ErrorAction SilentlyContinue
     if ($pkg) {
-        $pkg | Remove-AppxPackage
-        Write-Host "  已卸载"
+        # 同样保留包数据：这个开关是「安装失败时的手动恢复手段」，
+        # 不该顺手把用户的设置也清掉。真想连设置一起清，手动删那个目录。
+        $pkg | Remove-AppxPackage -PreserveApplicationData
+        Write-Host "  已卸载（设置已保留）"
     } else {
         Write-Host "  未安装，跳过"
     }
